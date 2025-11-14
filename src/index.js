@@ -47,7 +47,7 @@ async function startBot() {
         const client = new Client({ intents: INTENTS });
 
         // 6. Daftarkan Handler
-        client.once('ready', () => onReady(client));
+        client.once('clientReady', () => onReady(client));
         client.on('messageCreate', (message) => onMessageCreate(message));
         client.on('voiceStateUpdate', (oldState, newState) => onVoiceStateUpdate(oldState, newState));
         
