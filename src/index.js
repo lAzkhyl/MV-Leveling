@@ -1,45 +1,60 @@
 import { Client } from 'discord.js';
 import { TOKEN, INTENTS } from './config.js';
 import { initializeDatabase } from './database/index.js';
-import { recoverFromWAL, setupGracefulShutdown } from './core/recovery.js';
 
-// Impor handler
+// Impor fungsi 'prepare' BARU
+import { prepareCacheStatement } from './core/cache.js';
+import { prepareRecoveryStatement } from './core/recovery.js';
+import { prepareQueryStatements } from './database/queries.js';
+
+// Impor handler (ini aman, karena mereka hanya 'export default function')
 import onReady from './handlers/ready.js';
 import onMessageCreate from './handlers/messageCreate.js';
 import onVoiceStateUpdate from './handlers/voiceStateUpdate.js';
+
+// Impor 'recover' dan 'shutdown'
+import { recoverFromWAL, setupGracefulShutdown } from './core/recovery.js';
 
 /**
  * Fungsi utama untuk memulai bot
  */
 async function startBot() {
     console.log('Starting bot...');
-
     try {
-        // --- PILAR 2 (RECOVERY): Pulihkan dari WAL ---
+        // --- URUTAN SANGAT PENTING ---
+
+        // 1. Inisialisasi Database (BUAT TABEL)
+        initializeDatabase();
+
+        // 2. Daftarkan Fungsi SQL Kustom
+        // Ini menjalankan kode registrasi db.function()
+        await import('./core/leveling.js'); // Mengajarkan 'calculate_level'
+
+        // 3. Siapkan Kueri (PERSIAPKAN STATEMENT)
+        // Sekarang aman, karena tabel 'user_levels' sudah ada
+        console.log('Preparing database statements...');
+        prepareCacheStatement();
+        prepareRecoveryStatement();
+        prepareQueryStatements();
+        console.log('Statements prepared.');
+
+        // 4. Pulihkan dari WAL (Jalankan kueri recovery)
         console.log('Running WAL recovery check...');
         await recoverFromWAL();
         console.log('Recovery check complete.');
-
-        // --- PILAR 1 & 5: Inisialisasi Database ---
-        initializeDatabase();
         
-        // --- KRUSIAL: Impor leveling.js ---
-        // Ini menjalankan kode registrasi db.function()
-        // agar 'calculate_level' dikenal oleh SQLite.
-        await import('./core/leveling.js'); 
-
-        // --- INISIALISASI DISCORD CLIENT ---
+        // 5. Inisialisasi Discord Client
         const client = new Client({ intents: INTENTS });
 
-        // --- DAFTARKAN HANDLER (PILAR 3 & 4) ---
+        // 6. Daftarkan Handler
         client.once('ready', () => onReady(client));
         client.on('messageCreate', (message) => onMessageCreate(message));
         client.on('voiceStateUpdate', (oldState, newState) => onVoiceStateUpdate(oldState, newState));
         
-        // --- PILAR 2 (MITIGASI): Setup Graceful Shutdown ---
+        // 7. Setup Graceful Shutdown
         setupGracefulShutdown();
         
-        // --- LOGIN KE DISCORD ---
+        // 8. Login
         console.log('Logging in to Discord...');
         await client.login(TOKEN);
 

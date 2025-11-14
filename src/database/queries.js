@@ -1,37 +1,13 @@
 import { db } from './index.js';
-import { calculateLevel, getXpForLevel } from '../core/leveling.js';
+import { getXpForLevel } from '../core/leveling.js';
 
-// === PERSIAPAN KUERI (PREPARED STATEMENTS) ===
-// Menyiapkan kueri sekali saat startup jauh lebih efisien
-// daripada membuatnya setiap kali perintah dipanggil.
+// 1. Deklarasikan variabel kueri di sini (bukan const ... = db.prepare())
+let getUserRankQuery;
+let leaderboardQueries = {};
 
-// Kueri untuk mengambil data satu user
-const getUserRankQuery = db.prepare(`
-    WITH RankedUsers AS (
-        -- Pertama, kita beri peringkat semua user di server berdasarkan XP
-        SELECT 
-            user_id,
-            mv_xp,
-            mv_level,
-            friends_xp,
-            friends_level,
-            -- Fungsi window 'RANK()' memberi kita peringkat
-            RANK() OVER (PARTITION BY guild_id ORDER BY mv_xp DESC) as mv_rank,
-            RANK() OVER (PARTITION BY guild_id ORDER BY friends_xp DESC) as friends_rank
-        FROM user_levels
-        WHERE guild_id = @guildId
-    )
-    -- Sekarang, pilih user spesifik yang kita cari
-    SELECT *
-    FROM RankedUsers
-    WHERE user_id = @userId
-`);
-
-// Kueri untuk mengambil data leaderboard (Top 10)
+// Fungsi helper untuk membuat kueri leaderboard
 const getLeaderboardQuery = (type) => {
-    // Kita harus membuat kueri dinamis di sini karena
-    // 'better-sqlite3' tidak mengizinkan parameter untuk ORDER BY.
-    // Ini aman karena 'type' dikontrol secara internal.
+    // Ini aman karena 'type' dikontrol secara internal
     const xpCol = type === 'mv' ? 'mv_xp' : 'friends_xp';
     const levelCol = type === 'mv' ? 'mv_level' : 'friends_level';
 
@@ -47,17 +23,36 @@ const getLeaderboardQuery = (type) => {
     `);
 };
 
-// Siapkan kedua jenis kueri leaderboard
-const leaderboardQueries = {
-    mv: getLeaderboardQuery('mv'),
-    friends: getLeaderboardQuery('friends'),
-};
+// 2. Buat fungsi 'prepare' yang akan dipanggil oleh index.js
+export function prepareQueryStatements() {
+    getUserRankQuery = db.prepare(`
+        WITH RankedUsers AS (
+            -- Pertama, kita beri peringkat semua user di server berdasarkan XP
+            SELECT 
+                user_id,
+                mv_xp,
+                mv_level,
+                friends_xp,
+                friends_level,
+                -- Fungsi window 'RANK()' memberi kita peringkat
+                RANK() OVER (PARTITION BY guild_id ORDER BY mv_xp DESC) as mv_rank,
+                RANK() OVER (PARTITION BY guild_id ORDER BY friends_xp DESC) as friends_rank
+            FROM user_levels
+            WHERE guild_id = @guildId
+        )
+        -- Sekarang, pilih user spesifik yang kita cari
+        SELECT *
+        FROM RankedUsers
+        WHERE user_id = @userId
+    `);
+    
+    // Siapkan kedua jenis kueri leaderboard
+    leaderboardQueries.mv = getLeaderboardQuery('mv');
+    leaderboardQueries.friends = getLeaderboardQuery('friends');
+}
 
 /**
  * Mengambil data rank untuk satu user di satu server.
- * @param {string} userId - ID user Discord
- * @param {string} guildId - ID server Discord
- * @returns {object | null} Data rank user atau null jika tidak ditemukan
  */
 export function getUserRank(userId, guildId) {
     try {
@@ -94,9 +89,6 @@ export function getUserRank(userId, guildId) {
 
 /**
  * Mengambil data leaderboard (Top 10).
- * @param {string} guildId - ID server Discord
- * @param {'mv' | 'friends'} type - Tipe leaderboard
- * @returns {Array<object>} Array berisi data user
  */
 export function getLeaderboard(guildId, type = 'mv') {
     try {

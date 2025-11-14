@@ -3,32 +3,34 @@ import path from 'path';
 import readline from 'readline';
 import { db } from '../database/index.js';
 import { flushCacheToDB } from './cache.js';
-import './leveling.js'; // <-- PENTING: Impor ini untuk mendaftarkan 'calculate_level'
+import './leveling.js'; // Impor ini untuk mendaftarkan 'calculate_level'
 
-// Tentukan path ke folder 'data'
 const dataDir = path.resolve(process.cwd(), 'data');
-// Tentukan path lengkap ke file WAL
 export const WAL_PATH = path.resolve(dataDir, 'xp_journal.wal');
 
-// Siapkan kueri UPSERT "CERDAS" (versi yang sudah di-upgrade)
-// Ini akan memastikan level juga dihitung ulang saat pemulihan
-const upsertQuery = db.prepare(`
-    INSERT INTO user_levels (
-        user_id, guild_id, 
-        mv_xp, mv_level, 
-        friends_xp, friends_level
-    )
-    VALUES (
-        @userId, @guildId, 
-        @mvXpDelta, calculate_level(@mvXpDelta), 
-        @friendsXpDelta, calculate_level(@friendsXpDelta)
-    )
-    ON CONFLICT (user_id, guild_id) DO UPDATE SET
-        mv_xp = user_levels.mv_xp + @mvXpDelta,
-        friends_xp = user_levels.friends_xp + @friendsXpDelta,
-        mv_level = calculate_level(user_levels.mv_xp + @mvXpDelta),
-        friends_level = calculate_level(user_levels.friends_xp + @friendsXpDelta)
-`);
+// 1. Deklarasikan variabel kueri di sini (bukan const ... = db.prepare())
+let upsertQuery;
+
+// 2. Buat fungsi 'prepare' yang akan dipanggil oleh index.js
+export function prepareRecoveryStatement() {
+    upsertQuery = db.prepare(`
+        INSERT INTO user_levels (
+            user_id, guild_id, 
+            mv_xp, mv_level, 
+            friends_xp, friends_level
+        )
+        VALUES (
+            @userId, @guildId, 
+            @mvXpDelta, calculate_level(@mvXpDelta), 
+            @friendsXpDelta, calculate_level(@friendsXpDelta)
+        )
+        ON CONFLICT (user_id, guild_id) DO UPDATE SET
+            mv_xp = user_levels.mv_xp + @mvXpDelta,
+            friends_xp = user_levels.friends_xp + @friendsXpDelta,
+            mv_level = calculate_level(user_levels.mv_xp + @mvXpDelta),
+            friends_level = calculate_level(user_levels.friends_xp + @friendsXpDelta);
+    `);
+}
 
 /**
  * PILAR 2 (RECOVERY): Memulihkan data dari WAL saat startup.
@@ -117,6 +119,7 @@ export function setupGracefulShutdown() {
         
         // Panggil flush terakhir kali secara sinkron
         console.log('Flushing cache to database one last time...');
+        // Kita tidak bisa 'await' di sini, tapi flushCacheToDB bersifat sinkron
         flushCacheToDB(); 
         
         console.log('Flush complete. Shutting down.');
