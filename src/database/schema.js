@@ -16,8 +16,8 @@ const dbPath = path.resolve(dataDir, 'leveling.db');
 const db = new Database(dbPath);
 
 // === SKEMA TABEL (PILAR 1) ===
-[cite_start]// Skema ini adalah satu tabel datar yang dioptimalkan untuk performa [cite: 41]
-[cite_start]// Kita menggunakan Kunci Primer Komposit (user_id, guild_id) [cite: 44]
+// Skema ini adalah satu tabel datar yang dioptimalkan untuk performa
+// Kita menggunakan Kunci Primer Komposit (user_id, guild_id)
 const createTableQuery = `
 CREATE TABLE IF NOT EXISTS user_levels (
     user_id TEXT NOT NULL,
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS user_levels (
 `;
 
 // === INDEKS LEADERBOARD (PILAR 1) ===
-[cite_start]// Indeks ini KRUSIAL untuk membuat kueri leaderboard (!rank, !leaderboard) menjadi cepat [cite: 45, 46]
+// Indeks ini KRUSIAL untuk membuat kueri leaderboard (!rank, !leaderboard) menjadi cepat
 const createMvIndexQuery = `
 CREATE INDEX IF NOT EXISTS idx_mv_leaderboard
 ON user_levels (guild_id, mv_xp DESC);
