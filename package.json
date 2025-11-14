@@ -1,0 +1,15 @@
+{
+  "name": "mv-leveling-bot",
+  "version": "1.0.0",
+  "description": "Bot leveling MV & Friends dengan arsitektur I/O-First.",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.1.2",
+    "discord.js": "^14.15.3"
+  }
+}
