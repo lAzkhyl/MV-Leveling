@@ -3,15 +3,17 @@ import path from 'path';
 import readline from 'readline';
 import { db } from '../database/index.js';
 import { flushCacheToDB } from './cache.js';
-import './leveling.js'; // Impor ini untuk mendaftarkan 'calculate_level'
+import './leveling.js';
 
-const dataDir = path.resolve(process.cwd(), 'data');
+// Tentukan path ke folder 'data'
+// --- PERBAIKAN DI SINI ---
+const dataDir = '/data';
+// Tentukan path lengkap ke file WAL
 export const WAL_PATH = path.resolve(dataDir, 'xp_journal.wal');
 
-// 1. Deklarasikan variabel kueri di sini (bukan const ... = db.prepare())
+// Siapkan kueri UPSERT "CERDAS"
 let upsertQuery;
 
-// 2. Buat fungsi 'prepare' yang akan dipanggil oleh index.js
 export function prepareRecoveryStatement() {
     upsertQuery = db.prepare(`
         INSERT INTO user_levels (
@@ -36,17 +38,13 @@ export function prepareRecoveryStatement() {
  * PILAR 2 (RECOVERY): Memulihkan data dari WAL saat startup.
  */
 export async function recoverFromWAL() {
-    // Pastikan file WAL ada
     if (!fs.existsSync(WAL_PATH) || fs.statSync(WAL_PATH).size === 0) {
         console.log('[Recovery] WAL is empty or not found. No recovery needed.');
-        // Pastikan file kosong ada untuk 'append'
         fs.closeSync(fs.openSync(WAL_PATH, 'a'));
         return;
     }
 
     console.warn('[Recovery] WAL file found! Replaying data from last crash...');
-    
-    // Map sementara untuk merekonstruksi cache dari WAL
     const recoveryCache = new Map();
     const getKey = (guildId, userId) => `${guildId}-${userId}`;
 
@@ -58,7 +56,6 @@ export async function recoverFromWAL() {
 
     let lineCount = 0;
     try {
-        // Baca file WAL baris per baris
         for await (const line of rl) {
             if (line.trim() === '') continue;
             
@@ -78,17 +75,14 @@ export async function recoverFromWAL() {
         console.log(`[Recovery] Replayed ${lineCount} log entries, aggregated into ${recoveryCache.size} user updates.`);
 
         if (recoveryCache.size === 0) {
-            fs.truncateSync(WAL_PATH, 0); // Bersihkan file
+            fs.truncateSync(WAL_PATH, 0);
             return;
         }
 
-        // --- FLUSH DATA PEMULIHAN ---
         console.log('[Recovery] Flushing recovered data directly to database...');
-        
         const transaction = db.transaction((entries) => {
             for (const [key, deltas] of entries) {
                 const [guildId, userId] = key.split('-');
-                // Jalankan kueri dengan parameter bernama
                 upsertQuery.run({
                     userId: userId,
                     guildId: guildId,
@@ -97,10 +91,8 @@ export async function recoverFromWAL() {
                 });
             }
         });
-
         transaction(recoveryCache.entries());
 
-        // Setelah DB berhasil, baru kita hapus WAL
         fs.truncateSync(WAL_PATH, 0);
         console.log('[Recovery] Database synchronized from WAL successfully. WAL cleared.');
 
@@ -116,15 +108,9 @@ export async function recoverFromWAL() {
 export function setupGracefulShutdown() {
     process.on('SIGTERM', () => {
         console.warn('SIGTERM received! Performing graceful shutdown...');
-        
-        // Panggil flush terakhir kali secara sinkron
         console.log('Flushing cache to database one last time...');
-        // Kita tidak bisa 'await' di sini, tapi flushCacheToDB bersifat sinkron
         flushCacheToDB(); 
-        
         console.log('Flush complete. Shutting down.');
-        
-        // Keluar dengan bersih
         process.exit(0);
     });
 }
