@@ -31,8 +31,8 @@ export default {
                 .setDescription('Tipe role yang ingin dilihat (default: Keduanya).')
                 .setRequired(false)
                 .addChoices(
-                    { name: 'MV (Most Valuable)', value: 'mv' },
-                    { name: 'Friends (Sosial)', value: 'friends' }
+                    { name: 'MV', value: 'mv' },
+                    { name: 'Friends', value: 'friends' }
                 )),
 
     // 2. Logika Eksekusi
@@ -46,19 +46,19 @@ export default {
 
         const embed = new EmbedBuilder()
             .setColor('#1ABC9C') // Turquoise color
-            .setTitle(`🎁 Hadiah Level-Up`)
+            .setTitle(`🎁 Level-up Rewards`)
             .setTimestamp()
             .setFooter({ text: 'MV Leveling System' });
 
         // Skenario 1: Tampilkan Info MV
         if (type === 'mv') {
             const mvInfo = formatLevelInfo(ROLES_MV);
-            embed.setDescription('**Hadiah Role untuk MV (Most Valuable)**\n\n' + mvInfo);
+            embed.setDescription('**Role Rewards for MV**\n\n' + mvInfo);
         }
         // Skenario 2: Tampilkan Info Friends
         else if (type === 'friends') {
             const friendsInfo = formatLevelInfo(ROLES_FRIENDS);
-            embed.setDescription('**Hadiah Role untuk Friends (Sosial)**\n\n' + friendsInfo);
+            embed.setDescription('**Role Rewards for Friend**\n\n' + friendsInfo);
         }
         // Skenario 3: Tampilkan Keduanya (Default)
         else {
@@ -66,8 +66,8 @@ export default {
             const friendsInfo = formatLevelInfo(ROLES_FRIENDS);
 
             embed.addFields(
-                { name: '🏆 Hadiah MV', value: mvInfo, inline: true },
-                { name: '🤝 Hadiah Friends', value: friendsInfo, inline: true }
+                { name: '🏆 MV Rewards', value: mvInfo, inline: true },
+                { name: '🤝 Friend Rewards', value: friendsInfo, inline: true }
             );
         }
 
