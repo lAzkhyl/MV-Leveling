@@ -7,7 +7,7 @@ import { WAL_PATH } from './recovery.js';
 import { checkAndNotify } from './leveling.js'; 
 
 // === CACHE GLOBAL (PILAR 2) ===
-const dirtyXPCache = new Map();
+export const dirtyXPCache = new Map();
 const getKey = (guildId, userId) => `${guildId}-${userId}`;
 let upsertQuery;
 
