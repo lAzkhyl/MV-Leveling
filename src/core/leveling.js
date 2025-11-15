@@ -1,7 +1,13 @@
 import { db } from '../database/index.js';
-import { ROLES_MV, ROLES_FRIENDS, LEVEL_UP_CHANNEL_ID } from '../config.js';
+import { 
+    ROLES_MV, 
+    ROLES_FRIENDS, 
+    LEVEL_UP_CHANNEL_ID,
+    MV_BASE_ROLE_ID,       // <-- Impor baru
+    FRIENDS_BASE_ROLE_ID   // <-- Impor baru
+} from '../config.js';
 
-// --- FORMULA LEVELING ---
+// --- FORMULA LEVELING (Tetap Sama) ---
 export const XP_TO_LEVEL_MULTIPLIER = 0.1;
 
 export function calculateLevel(xp) {
@@ -9,29 +15,18 @@ export function calculateLevel(xp) {
     return Math.floor(XP_TO_LEVEL_MULTIPLIER * Math.sqrt(xp));
 }
 
-/**
- * Menghitung XP yang dibutuhkan untuk level BERIKUTNYA.
- * @param {number} level Level SAAT INI
- * @returns {number} Total XP yang dibutuhkan untuk level (level + 1)
- */
 export function getXpForLevel(level) {
-    // --- PERBAIKAN BUG DIMULAI ---
-    // if (level <= 0) return 0; // <-- INI BUG-NYA
-    if (level < 0) return 0; // Level negatif tidak valid
-    // --- PERBAIKAN BUG SELESAI ---
-
+    if (level < 0) return 0;
     const nextLevel = level + 1;
-    // (nextLevel / 0.1)^2
     return Math.ceil((nextLevel / XP_TO_LEVEL_MULTIPLIER) ** 2);
 }
 
-// Fungsi untuk /setlvl
 export function getXpFromLevel(level) {
     if (level <= 0) return 0;
     return Math.ceil((level / XP_TO_LEVEL_MULTIPLIER) ** 2);
 }
 
-// --- REGISTRASI FUNGSI DB (PILAR 5) ---
+// --- REGISTRASI FUNGSI DB (Tetap Sama) ---
 try {
     db.function('calculate_level', {
         deterministic: true,
@@ -46,9 +41,10 @@ try {
     console.error("Failed to register custom SQL function:", error);
 }
 
-// --- LOGIKA NOTIFIKASI & ROLE ---
+// --- LOGIKA NOTIFIKASI & ROLE (DI-UPGRADE) ---
 export async function checkAndNotify(client, guildId, userId, type, oldLevel, newLevel) {
     if (newLevel <= oldLevel) return; 
+
     console.log(`[Level Up Check] User ${userId} ${type}: ${oldLevel} -> ${newLevel}`);
 
     const roleConfig = (type === 'mv') ? ROLES_MV : ROLES_FRIENDS;
@@ -64,27 +60,60 @@ export async function checkAndNotify(client, guildId, userId, type, oldLevel, ne
         return;
     }
 
-    // 3. Logika Pemberian Role
+    // --- LOGIKA ROLE REPLACEMENT (BARU!) ---
     if (roleConfig && Object.keys(roleConfig).length > 0) {
+        let newRoleToAdd = null;
+        let rolesToRemove = [];
+
         for (const levelThreshold in roleConfig) {
+            const roleId = roleConfig[levelThreshold];
+            
+            // Apakah ini role yang baru saja dicapai?
             if (newLevel >= levelThreshold && oldLevel < levelThreshold) {
-                const roleId = roleConfig[levelThreshold];
-                const role = guild.roles.cache.get(roleId);
-                if (role) {
-                    try {
-                        await member.roles.add(role);
-                        console.log(`[Level Up] Assigned role ${role.name} to ${member.user.tag}.`);
-                    } catch (roleError) {
-                        console.warn(`[Level Up] Gagal memberi role ${role.name} ke ${member.user.tag}. (Missing Permissions?)`);
-                    }
-                } else {
-                    console.warn(`[Level Up] Role ID ${roleId} tidak ditemukan di guild ${guild.name}.`);
-                }
+                newRoleToAdd = roleId;
+            } 
+            // Apakah ini role lama yang harus dihapus?
+            else if (newLevel >= levelThreshold) {
+                // Kumpulkan semua role yang levelnya di bawah level baru
+                rolesToRemove.push(roleId);
             }
         }
-    }
 
-    // 4. LOGIKA NOTIFIKASI NAIK LEVEL
+        try {
+            // 1. Tambahkan role baru (jika ada)
+            if (newRoleToAdd) {
+                // Pastikan role baru tidak ada di daftar hapus (jika ada bug)
+                rolesToRemove = rolesToRemove.filter(id => id !== newRoleToAdd);
+                
+                const role = guild.roles.cache.get(newRoleToAdd);
+                if (role) {
+                    await member.roles.add(role);
+                    console.log(`[Level Up] Menambahkan role ${role.name} ke ${member.user.tag}.`);
+                } else {
+                     console.warn(`[Level Up] Role ID ${newRoleToAdd} tidak ditemukan.`);
+                }
+            }
+
+            // 2. Hapus semua role lama (jika ada)
+            if (rolesToRemove.length > 0) {
+                // Saring lagi untuk memastikan kita TIDAK menghapus role base
+                const rolesToActuallyRemove = rolesToRemove.filter(id => 
+                    id !== MV_BASE_ROLE_ID && id !== FRIENDS_BASE_ROLE_ID
+                );
+
+                if (rolesToActuallyRemove.length > 0) {
+                    await member.roles.remove(rolesToActuallyRemove);
+                    console.log(`[Level Up] Menghapus ${rolesToActuallyRemove.length} role lama dari ${member.user.tag}.`);
+                }
+            }
+
+        } catch (roleError) {
+            console.warn(`[Level Up] Gagal mengubah role untuk ${member.user.tag}. (Missing Permissions?)`);
+        }
+    }
+    // --- AKHIR LOGIKA ROLE REPLACEMENT ---
+
+    // 4. LOGIKA NOTIFIKASI NAIK LEVEL (Tetap Sama)
     if (LEVEL_UP_CHANNEL_ID) {
         try {
             const channel = await guild.channels.fetch(LEVEL_UP_CHANNEL_ID);

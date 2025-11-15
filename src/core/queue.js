@@ -1,65 +1,50 @@
-import { XP_SETTINGS } from '../config.js';
-import { addDirtyXP } from './cache.js'; // Kita akan buat file ini di langkah berikutnya
+import { addDirtyXP } from './cache.js'; 
 
-// === ANTRIAN GLOBAL (PILAR 3) ===
-// Ini adalah antrian "in-memory" kita.
-// Ini adalah array sederhana yang menampung "job" XP.
 export const xpJobQueue = [];
 
+/**
+ * Fungsi ini sekarang lebih sederhana.
+ * Hanya mengagregasi job yang sudah spesifik.
+ */
 export function processXPQueue() {
-    // --- PENGECEKAN SAKLAR (BARU!) ---
     if (!global.isLevelingActive) return;
-    // --- AKHIR PENGECEKAN SAKLAR ---
-
     if (xpJobQueue.length === 0) return;
 
-    // 1. Ambil SEMUA pekerjaan saat ini dalam satu operasi atomik
-    //    dan bersihkan antrian aslinya.
+    // 1. Ambil SEMUA pekerjaan saat ini
     const jobsToProcess = xpJobQueue.splice(0, xpJobQueue.length);
 
     // 2. Agregasi "Micro-batch"
-    //    (Mencegah 1 user spam 100x dan memanggil addDirtyXP 100x)
-    //    Map<key, { mv: total_mv, friends: total_friends }>
     const aggregatedJobs = new Map();
     const key = (guildId, userId) => `${guildId}-${userId}`;
 
     for (const job of jobsToProcess) {
         const jobKey = key(job.guildId, job.userId);
         
-        // Inisialisasi jika user ini belum ada di batch
         if (!aggregatedJobs.has(jobKey)) {
             aggregatedJobs.set(jobKey, { mv: 0, friends: 0 });
         }
 
         const agg = aggregatedJobs.get(jobKey);
 
+        // --- Logika Anti-Spam (Hanya untuk Teks) ---
         if (job.type === 'text') {
-            // --- Anti-Spam Lanjutan (Pilar 4) ---
-            // Cek panjang pesan minimum
-            if (job.messageContent.length < 5) { // Abaikan pesan "ok", "lol"
+            if (job.messageContent.length < 5) {
                 continue; 
             }
-            // (Tambahkan logika anti-spam lain di sini jika perlu)
-            
-            agg.mv += XP_SETTINGS.textXp.mv;
-            agg.friends += XP_SETTINGS.textXp.friends;
-            
-        } else if (job.type === 'voice') {
-            // Logika XP Suara dari grantVoiceXP (Pilar 4)
-            if (job.xpSystem === 'friends') {
-                agg.friends += job.amount;
-            } else if (job.xpSystem === 'mv') {
-                agg.mv += job.amount;
-            }
+        }
+
+        // --- Logika Agregasi (Disederhanakan) ---
+        if (job.xpSystem === 'mv') {
+            agg.mv += job.amount;
+        } else if (job.xpSystem === 'friends') {
+            agg.friends += job.amount;
         }
     }
 
-    // 3. Terapkan batch AGREGAT ini ke Cache "Write-Behind" (Pilar 2)
+    // 3. Terapkan batch AGREGAT ini ke Cache (Pilar 2)
     for (const [jobKey, gains] of aggregatedJobs.entries()) {
         const [guildId, userId] = jobKey.split('-');
 
-        // Panggil fungsi dari Pilar 2
-        // Kita akan membuat addDirtyXP di langkah selanjutnya
         if (gains.mv > 0) {
             addDirtyXP(guildId, userId, 'mv', gains.mv);
         }
