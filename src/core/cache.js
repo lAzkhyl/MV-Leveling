@@ -2,12 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import { db } from '../database/index.js';
 import { WAL_PATH } from './recovery.js';
-// --- PERUBAHAN DI SINI ---
-// Kita tidak lagi mengimpor config role, tapi mengimpor fungsi notifikasi
 import { checkAndNotify } from './leveling.js'; 
 
-// === CACHE GLOBAL (PILAR 2) ===
-export const dirtyXPCache = new Map();
+export const dirtyXPCache = new Map(); // Diekspor untuk /admin stats
 const getKey = (guildId, userId) => `${guildId}-${userId}`;
 let upsertQuery;
 
@@ -31,6 +28,7 @@ export function addDirtyXP(guildId, userId, type, amount) {
 }
 
 export function prepareCacheStatement() {
+    // --- PERBAIKAN BUG DIMULAI (RETURNING) ---
     upsertQuery = db.prepare(`
         INSERT INTO user_levels (
             user_id, guild_id, 
@@ -48,15 +46,16 @@ export function prepareCacheStatement() {
             mv_level = calculate_level(user_levels.mv_xp + @mvXpDelta),
             friends_level = calculate_level(user_levels.friends_xp + @friendsXpDelta)
         RETURNING 
-            user_id, guild_id, mv_level AS new_mv_level, friends_level AS new_friends_level, 
+            user_id, guild_id, 
+            mv_level AS new_mv_level, 
+            friends_level AS new_friends_level,
+            -- Trik SQLite: Ambil nilai LAMA *sebelum* klausa UPDATE dijalankan
             (SELECT mv_level FROM user_levels WHERE user_id = @userId AND guild_id = @guildId) AS old_mv_level,
             (SELECT friends_level FROM user_levels WHERE user_id = @userId AND guild_id = @guildId) AS old_friends_level;
     `);
+    // --- PERBAIKAN BUG SELESAI ---
 }
 
-/**
- * Fungsi ini dipanggil oleh setInterval di ready.js.
- */
 export async function flushCacheToDB(client) {
     if (dirtyXPCache.size === 0) return;
     
@@ -67,7 +66,6 @@ export async function flushCacheToDB(client) {
     let levelUpEvents = []; 
 
     try {
-        // --- Bagian 1: Transaksi Database (Sinkron) ---
         const transaction = db.transaction((entries) => {
             let events = [];
             for (const [key, deltas] of entries) {
@@ -88,7 +86,6 @@ export async function flushCacheToDB(client) {
 
         levelUpEvents = transaction(cacheToFlush.entries());
 
-        // --- Bagian 2: Hapus WAL (Setelah DB sukses) ---
         fs.truncateSync(WAL_PATH, 0); 
         console.log(`[Cache Flush] Successfully flushed ${cacheToFlush.size} updates. WAL cleared.`);
 
@@ -104,16 +101,11 @@ export async function flushCacheToDB(client) {
         return; 
     }
 
-    // --- Bagian 3: Pemberian Role & Notifikasi (Asinkron) ---
     if (levelUpEvents.length > 0) {
         console.log(`[Cache Flush] Processing ${levelUpEvents.length} level-up events...`);
         for (const event of levelUpEvents) {
-            // --- PERUBAHAN DI SINI ---
-            // Memanggil fungsi notifikasi yang sudah dipindah ke leveling.js
             await checkAndNotify(client, event.guildId, event.userId, 'mv', event.old_mv_level, event.new_mv_level);
             await checkAndNotify(client, event.guildId, event.userId, 'friends', event.old_friends_level, event.new_friends_level);
         }
     }
 }
-
-// --- FUNGSI checkAndAssignRoles SEKARANG SUDAH DIHAPUS DARI FILE INI ---

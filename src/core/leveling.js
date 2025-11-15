@@ -1,5 +1,4 @@
 import { db } from '../database/index.js';
-// Impor yang dibutuhkan untuk notifikasi & role
 import { ROLES_MV, ROLES_FRIENDS, LEVEL_UP_CHANNEL_ID } from '../config.js';
 
 // --- FORMULA LEVELING ---
@@ -10,16 +9,25 @@ export function calculateLevel(xp) {
     return Math.floor(XP_TO_LEVEL_MULTIPLIER * Math.sqrt(xp));
 }
 
+/**
+ * Menghitung XP yang dibutuhkan untuk level BERIKUTNYA.
+ * @param {number} level Level SAAT INI
+ * @returns {number} Total XP yang dibutuhkan untuk level (level + 1)
+ */
 export function getXpForLevel(level) {
-    if (level <= 0) return 0;
-    return Math.ceil(((level + 1) / XP_TO_LEVEL_MULTIPLIER) ** 2);
+    // --- PERBAIKAN BUG DIMULAI ---
+    // if (level <= 0) return 0; // <-- INI BUG-NYA
+    if (level < 0) return 0; // Level negatif tidak valid
+    // --- PERBAIKAN BUG SELESAI ---
+
+    const nextLevel = level + 1;
+    // (nextLevel / 0.1)^2
+    return Math.ceil((nextLevel / XP_TO_LEVEL_MULTIPLIER) ** 2);
 }
 
-// --- FUNGSI BARU UNTUK MENGHITUNG XP DARI LEVEL ---
-// Ini dibutuhkan untuk /setlvl
+// Fungsi untuk /setlvl
 export function getXpFromLevel(level) {
     if (level <= 0) return 0;
-    // (level / 0.1)^2
     return Math.ceil((level / XP_TO_LEVEL_MULTIPLIER) ** 2);
 }
 
@@ -38,28 +46,20 @@ try {
     console.error("Failed to register custom SQL function:", error);
 }
 
-// --- LOGIKA NOTIFIKASI & ROLE (PINDAHAN DARI CACHE.JS) ---
-/**
- * Fungsi ini sekarang dipanggil oleh cache.js DAN perintah admin
- * @param {import('discord.js').Client} client
- */
+// --- LOGIKA NOTIFIKASI & ROLE ---
 export async function checkAndNotify(client, guildId, userId, type, oldLevel, newLevel) {
-    // 1. Pastikan user benar-benar naik level
     if (newLevel <= oldLevel) return; 
-
     console.log(`[Level Up Check] User ${userId} ${type}: ${oldLevel} -> ${newLevel}`);
 
     const roleConfig = (type === 'mv') ? ROLES_MV : ROLES_FRIENDS;
-    const roleMap = (type === 'mv') ? "MV" : "Friends"; // Nama untuk notifikasi
+    const roleMap = (type === 'mv') ? "MV" : "Friends";
     let member;
     let guild;
 
-    // 2. Coba ambil data Guild dan Member
     try {
         guild = await client.guilds.fetch(guildId);
         member = await guild.members.fetch(userId);
     } catch (error) {
-        // Gagal (member mungkin sudah keluar server)
         console.error(`[Level Up] Gagal fetch member ${userId} di ${guildId}.`, error.message);
         return;
     }
