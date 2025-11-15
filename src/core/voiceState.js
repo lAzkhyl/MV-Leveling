@@ -4,12 +4,11 @@ import { xpJobQueue } from './queue.js'; // Impor antrian
 // === CACHE STATUS SUARA GLOBAL (PILAR 4) ===
 export const voiceStateCache = new Map();
 
-/**
- * Fungsi ini dipanggil oleh setInterval di ready.js.
- * @param {import('discord.js').Client} client
- */
 export function grantVoiceXP(client) {
-    // Iterasi cache state LOKAL kita
+    // --- PENGECEKAN SAKLAR (BARU!) ---
+    if (!global.isLevelingActive) return;
+    // --- AKHIR PENGECEKAN SAKLAR ---
+    
     for (const [userId, state] of voiceStateCache.entries()) {
         try {
             // --- 1. Ambil Objek (Cepat, dari cache Discord.js) ---

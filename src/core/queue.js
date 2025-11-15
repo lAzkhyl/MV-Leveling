@@ -6,15 +6,11 @@ import { addDirtyXP } from './cache.js'; // Kita akan buat file ini di langkah b
 // Ini adalah array sederhana yang menampung "job" XP.
 export const xpJobQueue = [];
 
-// === WORKER PEMROSES ANTRIAN (PILAR 3) ===
-
-/**
- * Fungsi ini dipanggil oleh setInterval di ready.js.
- * Tugasnya adalah mengambil semua job dari antrian,
- * mengagregasinya, dan menerapkannya ke cache (Pilar 2).
- */
 export function processXPQueue() {
-    // Jika antrian kosong, jangan lakukan apa-apa
+    // --- PENGECEKAN SAKLAR (BARU!) ---
+    if (!global.isLevelingActive) return;
+    // --- AKHIR PENGECEKAN SAKLAR ---
+
     if (xpJobQueue.length === 0) return;
 
     // 1. Ambil SEMUA pekerjaan saat ini dalam satu operasi atomik

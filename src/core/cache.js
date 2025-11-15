@@ -2,22 +2,18 @@ import fs from 'fs';
 import path from 'path';
 import { db } from '../database/index.js';
 import { WAL_PATH } from './recovery.js';
-import { ROLES_MV, ROLES_FRIENDS } from '../config.js';
+// --- PERUBAHAN DI SINI ---
+// Kita tidak lagi mengimpor config role, tapi mengimpor fungsi notifikasi
+import { checkAndNotify } from './leveling.js'; 
 
 // === CACHE GLOBAL (PILAR 2) ===
 const dirtyXPCache = new Map();
 const getKey = (guildId, userId) => `${guildId}-${userId}`;
+let upsertQuery;
 
-/**
- * Pintu masuk utama untuk menambahkan XP ke cache.
- * Dipanggil oleh processXPQueue (Pilar 3).
- */
 export function addDirtyXP(guildId, userId, type, amount) {
     if (amount === 0) return;
-
     const key = getKey(guildId, userId);
-
-    // 1. Perbarui Cache di Memori
     const entry = dirtyXPCache.get(key) || { mv: 0, friends: 0 };
     if (type === 'mv') {
         entry.mv += amount;
@@ -26,15 +22,7 @@ export function addDirtyXP(guildId, userId, type, amount) {
     }
     dirtyXPCache.set(key, entry);
 
-    // 2. Tulis ke "Lite" WAL
-    const logEntry = {
-        ts: Date.now(),
-        guildId,
-        userId,
-        type,
-        amount
-    };
-
+    const logEntry = { ts: Date.now(), guildId, userId, type, amount };
     try {
         fs.appendFileSync(WAL_PATH, JSON.stringify(logEntry) + '\n');
     } catch (error) {
@@ -42,12 +30,6 @@ export function addDirtyXP(guildId, userId, type, amount) {
     }
 }
 
-// === FUNGSI FLUSH CACHE (PILAR 2) ===
-
-// 1. Deklarasikan variabel kueri di sini (bukan const ... = db.prepare())
-let upsertQuery;
-
-// 2. Buat fungsi 'prepare' yang akan dipanggil oleh index.js
 export function prepareCacheStatement() {
     upsertQuery = db.prepare(`
         INSERT INTO user_levels (
@@ -75,43 +57,42 @@ export function prepareCacheStatement() {
 /**
  * Fungsi ini dipanggil oleh setInterval di ready.js.
  */
-export function flushCacheToDB(client) {
-    if (dirtyXPCache.size === 0) {
-        return;
-    }
+export async function flushCacheToDB(client) {
+    if (dirtyXPCache.size === 0) return;
+    
     const cacheToFlush = new Map(dirtyXPCache);
     dirtyXPCache.clear();
-
     console.log(`[Cache Flush] Flushing ${cacheToFlush.size} user updates to database...`);
+
+    let levelUpEvents = []; 
+
     try {
+        // --- Bagian 1: Transaksi Database (Sinkron) ---
         const transaction = db.transaction((entries) => {
+            let events = [];
             for (const [key, deltas] of entries) {
                 const [guildId, userId] = key.split('-');
-                
-                // Jalankan kueri UPSERT cerdas
                 const result = upsertQuery.get({
                     userId: userId, 
                     guildId: guildId, 
                     mvXpDelta: deltas.mv, 
                     friendsXpDelta: deltas.friends
                 });
-
-                // --- LOGIKA LEVEL UP ---
+                
                 if (result) {
-                    checkAndAssignRoles(client, result.guildId, result.userId, 'mv', result.old_mv_level, result.new_mv_level);
-                    checkAndAssignRoles(client, result.guildId, result.userId, 'friends', result.old_friends_level, result.new_friends_level);
+                    events.push(result);
                 }
             }
+            return events; 
         });
 
-        transaction(cacheToFlush.entries());
+        levelUpEvents = transaction(cacheToFlush.entries());
 
-        // 3. Setelah DB berhasil di-flush, hapus file WAL
+        // --- Bagian 2: Hapus WAL (Setelah DB sukses) ---
         fs.truncateSync(WAL_PATH, 0); 
         console.log(`[Cache Flush] Successfully flushed ${cacheToFlush.size} updates. WAL cleared.`);
 
     } catch (error) {
-        // Jika flush GAGAL, gabungkan kembali data ke cache utama
         console.error('CRITICAL: Failed to flush cache to DB!', error);
         console.log('[Cache Flush] Re-merging failed data back into cache...');
         for (const [key, deltas] of cacheToFlush.entries()) {
@@ -120,36 +101,19 @@ export function flushCacheToDB(client) {
             existing.friends += deltas.friends;
             dirtyXPCache.set(key, existing);
         }
+        return; 
     }
-}
 
-/**
- * Fungsi untuk menangani pemberian role saat level up
- */
-async function checkAndAssignRoles(client, guildId, userId, type, oldLevel, newLevel) {
-    if (newLevel <= oldLevel) return; 
-
-    const roleConfig = (type === 'mv') ? ROLES_MV : ROLES_FRIENDS;
-    if (!roleConfig || Object.keys(roleConfig).length === 0) return;
-
-    console.log(`[Level Up Check] User ${userId} ${type}: ${oldLevel} -> ${newLevel}`);
-    try {
-        const guild = await client.guilds.fetch(guildId);
-        const member = await guild.members.fetch(userId);
-
-        for (const levelThreshold in roleConfig) {
-            if (newLevel >= levelThreshold && oldLevel < levelThreshold) {
-                const roleId = roleConfig[levelThreshold];
-                const role = guild.roles.cache.get(roleId);
-                if (role) {
-                    await member.roles.add(role);
-                    console.log(`[Level Up] Assigned role ${role.name} to ${member.user.tag} for reaching ${type} level ${levelThreshold}.`);
-                } else {
-                    console.warn(`[Level Up] Role ID ${roleId} not found in guild ${guild.name}.`);
-                }
-            }
+    // --- Bagian 3: Pemberian Role & Notifikasi (Asinkron) ---
+    if (levelUpEvents.length > 0) {
+        console.log(`[Cache Flush] Processing ${levelUpEvents.length} level-up events...`);
+        for (const event of levelUpEvents) {
+            // --- PERUBAHAN DI SINI ---
+            // Memanggil fungsi notifikasi yang sudah dipindah ke leveling.js
+            await checkAndNotify(client, event.guildId, event.userId, 'mv', event.old_mv_level, event.new_mv_level);
+            await checkAndNotify(client, event.guildId, event.userId, 'friends', event.old_friends_level, event.new_friends_level);
         }
-    } catch (error) {
-        console.error(`Failed to assign level-up role to ${userId} in ${guildId}:`, error.message);
     }
 }
+
+// --- FUNGSI checkAndAssignRoles SEKARANG SUDAH DIHAPUS DARI FILE INI ---

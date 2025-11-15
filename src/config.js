@@ -10,13 +10,16 @@ function parseEnvSet(envVar) {
 
 // 1. Konfigurasi Bot
 export const TOKEN = process.env.DISCORD_TOKEN;
+export const CLIENT_ID = process.env.DISCORD_CLIENT_ID; // <-- TAMBAHKAN INI
+export const OWNER_ID = process.env.DISCORD_OWNER_ID; // <-- TAMBAHKAN INI
+
 export const INTENTS = [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildVoiceStates,
 ];
-export const PREFIX = "$";
+// PREFIX = "$"; // <-- HAPUS BARIS INI
 
 // 2. Konfigurasi Leveling
 export const XP_SETTINGS = {
@@ -60,3 +63,6 @@ export const IGNORED_TEXT_CHANNELS = new Set([
 export const IGNORED_VOICE_CHANNELS = new Set([
     "1433572294298439680" // 𝗔𝗙𝗞
 ]);
+
+// 5. Konfigurasi Notifikasi
+export const LEVEL_UP_CHANNEL_ID = "1437546013983510598";
