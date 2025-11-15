@@ -44,12 +44,12 @@ export default {
             .setDescription(`Statistik untuk <@${targetUser.id}>`)
             .addFields(
                 { 
-                    name: `🏆 MV (Most Valuable)`, 
+                    name: `🏆 MV`, 
                     value: `**Level:** ${data.mv_level}\n**XP:** ${data.mv_xp} / ${data.mv_xp_next}\n**Rank:** #${data.mv_rank}`,
                     inline: true 
                 },
                 { 
-                    name: `🤝 Friends (Sosial)`, 
+                    name: `🤝 Friends`, 
                     value: `**Level:** ${data.friends_level}\n**XP:** ${data.friends_xp} / ${data.friends_xp_next}\n**Rank:** #${data.friends_rank}`,
                     inline: true 
                 }
