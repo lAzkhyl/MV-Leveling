@@ -128,16 +128,7 @@ export default {
                 case 'auditxp':
                     await handleAuditXp(interaction);
                     break;
-                case 'start':
-                    global.isLevelingActive = true;
-                    await interaction.editReply('✅ **Sistem Leveling telah DIAKTIFKAN.** Bot akan mulai menghitung XP.');
-                    break;
-                case 'stop':
-                    global.isLevelingActive = false;
-                    await interaction.editReply('Sistem Leveling DIHENTIKAN. Menjalankan *flush* terakhir untuk menyimpan data...');
-                    flushCacheToDB(interaction.client);
-                    await interaction.followUp({ content: '🛑 **Sistem Leveling telah DIMATIKAN.** Bot tidak akan menghitung XP. *Cache* telah disimpan.', ephemeral: true });
-                    break;
+                
             }
         } catch (error) {
             console.error(`Error executing /admin ${subcommand}:`, error);
