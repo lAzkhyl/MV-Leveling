@@ -1,26 +1,12 @@
 import { db } from './index.js';
 import { getXpForLevel } from '../core/leveling.js';
 
-// --- KUERI BARU YANG LEBIH SEDERHANA DAN ANDAL ---
+// 1. Deklarasikan variabel, JANGAN siapkan di sini.
+let getUserDataQuery;
+let getUserRankQuery;
+let leaderboardQueries = {};
 
-// Kueri 1: Ambil data XP dan Level user
-const getUserDataQuery = db.prepare(`
-    SELECT * FROM user_levels
-    WHERE user_id = @userId AND guild_id = @guildId
-`);
-
-// Kueri 2: Ambil rank user secara terpisah
-// Ini menghitung berapa banyak user lain yang memiliki XP LEBIH BANYAK
-const getUserRankQuery = db.prepare(`
-    SELECT 
-        (SELECT COUNT(*) FROM user_levels t2 WHERE t2.guild_id = t1.guild_id AND t2.mv_xp > t1.mv_xp) + 1 AS mv_rank,
-        (SELECT COUNT(*) FROM user_levels t2 WHERE t2.guild_id = t1.guild_id AND t2.friends_xp > t1.friends_xp) + 1 AS friends_rank
-    FROM user_levels t1
-    WHERE t1.user_id = @userId AND t1.guild_id = @guildId
-`);
-// --- AKHIR KUERI BARU ---
-
-// Kueri untuk mengambil data leaderboard (Top 10)
+// Fungsi helper untuk membuat kueri leaderboard (Ini aman, karena tidak langsung dijalankan)
 const getLeaderboardQuery = (type) => {
     const xpCol = type === 'mv' ? 'mv_xp' : 'friends_xp';
     const levelCol = type === 'mv' ? 'mv_level' : 'friends_level';
@@ -36,19 +22,33 @@ const getLeaderboardQuery = (type) => {
     `);
 };
 
-// Siapkan kedua jenis kueri leaderboard
-let leaderboardQueries = {}; // Akan diisi oleh prepareQueryStatements
-
+// 2. Siapkan SEMUA kueri di dalam fungsi ini
+// Fungsi ini akan dipanggil oleh index.js SETELAH tabel dibuat.
 export function prepareQueryStatements() {
-    // Siapkan kueri leaderboard
+    
+    // PINDAHKAN DARI ATAS KE SINI:
+    getUserDataQuery = db.prepare(`
+        SELECT * FROM user_levels
+        WHERE user_id = @userId AND guild_id = @guildId
+    `);
+
+    // PINDAHKAN DARI ATAS KE SINI:
+    getUserRankQuery = db.prepare(`
+        SELECT 
+            (SELECT COUNT(*) FROM user_levels t2 WHERE t2.guild_id = t1.guild_id AND t2.mv_xp > t1.mv_xp) + 1 AS mv_rank,
+            (SELECT COUNT(*) FROM user_levels t2 WHERE t2.guild_id = t1.guild_id AND t2.friends_xp > t1.friends_xp) + 1 AS friends_rank
+        FROM user_levels t1
+        WHERE t1.user_id = @userId AND t1.guild_id = @guildId
+    `);
+    
+    // Kueri leaderboard (ini sudah benar)
     leaderboardQueries.mv = getLeaderboardQuery('mv');
     leaderboardQueries.friends = getLeaderboardQuery('friends');
-    // (getUserDataQuery dan getUserRankQuery sudah disiapkan di atas)
 }
 
 /**
- * Mengambil data rank untuk satu user di satu server.
- * (Fungsi ini sekarang di-refactor untuk menggunakan 2 kueri)
+ * 3. Sisa file (getUserRank dan getLeaderboard)
+ * Tidak perlu diubah sama sekali.
  */
 export function getUserRank(userId, guildId) {
     try {
@@ -85,9 +85,6 @@ export function getUserRank(userId, guildId) {
     }
 }
 
-/**
- * Mengambil data leaderboard (Top 10).
- */
 export function getLeaderboard(guildId, type = 'mv') {
     try {
         const query = (type === 'mv') ? leaderboardQueries.mv : leaderboardQueries.friends;
